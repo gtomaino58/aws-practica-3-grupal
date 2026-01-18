@@ -1,0 +1,104 @@
+version: 0.2
+
+env:
+  variables:
+    # Estas variables las inyecta pipeline.yaml en CodeBuild:
+    # ARTIFACT_BUCKET: bucket de artefactos del pipeline
+    # LAMBDA_S3_KEY: key destino para lambda.zip
+    # APP_STACK_NAME: nombre del stack app (app.yaml)
+    # FRONTEND_SYNC_ENABLED: "true" / "false"
+    PYTHONUNBUFFERED: "1"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "== Install phase =="
+      - python --version
+      - pip --version
+
+  pre_build:
+    commands:
+      - echo "== Pre-build phase =="
+      - echo "Validando existencia de carpetas..."
+      - test -d backend/lambda
+      - test -d infra/cloudformation
+      - test -d frontend
+
+      # (Opcional) Instalar dependencias si existieran (normalmente no hay)
+      - if [ -f backend/lambda/requirements.txt ]; then pip install -r backend/lambda/requirements.txt -t backend/lambda/vendor; fi
+
+      # (Opcional) Tests unitarios simples si existe carpeta tests
+      - |
+        if [ -d backend/lambda/tests ]; then
+          echo "Ejecutando tests unitarios..."
+          pip install pytest
+          pytest -q backend/lambda/tests
+        else
+          echo "No hay tests unitarios (carpeta backend/lambda/tests no existe)."
+        fi
+
+  build:
+    commands:
+      - echo "== Build phase =="
+      - echo "Empaquetando Lambda..."
+      - cd backend/lambda
+      # Empaquetar el código Lambda (y vendor si existe)
+      - zip -r ../../lambda.zip . -x "*.pyc" "__pycache__/*"
+      - cd ../../
+      - ls -lh lambda.zip
+
+      - echo "Subiendo lambda.zip a S3 (artifact bucket)..."
+      - aws s3 cp lambda.zip "s3://${ARTIFACT_BUCKET}/${LAMBDA_S3_KEY}"
+
+      - echo "Obteniendo outputs del stack ${APP_STACK_NAME}..."
+      - |
+        API_ENDPOINT=$(aws cloudformation describe-stacks \
+          --stack-name "${APP_STACK_NAME}" \
+          --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
+          --output text)
+
+        FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
+          --stack-name "${APP_STACK_NAME}" \
+          --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketOut'].OutputValue" \
+          --output text)
+
+        CF_DIST_ID=$(aws cloudformation describe-stacks \
+          --stack-name "${APP_STACK_NAME}" \
+          --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
+          --output text)
+
+        echo "API_ENDPOINT=${API_ENDPOINT}"
+        echo "FRONTEND_BUCKET=${FRONTEND_BUCKET}"
+        echo "CF_DIST_ID=${CF_DIST_ID}"
+
+        if [ -z "${API_ENDPOINT}" ] || [ "${API_ENDPOINT}" = "None" ]; then
+          echo "ERROR: No se ha encontrado output ApiEndpoint en el stack ${APP_STACK_NAME}"
+          exit 1
+        fi
+
+      - |
+        if [ "${FRONTEND_SYNC_ENABLED}" = "true" ]; then
+          echo "Actualizando frontend/index.html con API_ENDPOINT..."
+          # Sustituye el placeholder por el endpoint real
+          sed -i "s|REEMPLAZAR_POR_API_ENDPOINT|${API_ENDPOINT}|g" frontend/index.html
+
+          echo "Sincronizando frontend/ a s3://${FRONTEND_BUCKET} ..."
+          aws s3 sync frontend/ "s3://${FRONTEND_BUCKET}" --delete
+
+          echo "Invalidando CloudFront distribution ${CF_DIST_ID} ..."
+          aws cloudfront create-invalidation --distribution-id "${CF_DIST_ID}" --paths "/*"
+        else
+          echo "FRONTEND_SYNC_ENABLED=false => No se sincroniza frontend ni se invalida CloudFront."
+        fi
+
+  post_build:
+    commands:
+      - echo "== Post-build phase =="
+      - echo "Build finalizado."
+
+artifacts:
+  files:
+    - lambda.zip
+  discard-paths: yes

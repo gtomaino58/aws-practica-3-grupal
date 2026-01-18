@@ -1,0 +1,258 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  TG3 - Plataforma web segura con contador de visitas (single-region):
+  S3 privado + CloudFront (OAC) + API Gateway (HTTP API) + Lambda + DynamoDB.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: tg3-visits
+    Description: "Prefijo para nombrar recursos."
+
+  # Bucket donde el pipeline subirá el ZIP de Lambda
+  LambdaCodeS3Bucket:
+    Type: String
+    Description: "Bucket S3 donde se encuentra el ZIP de Lambda (lo subirá CodePipeline/CodeBuild)."
+
+  LambdaCodeS3Key:
+    Type: String
+    Default: lambda/lambda.zip
+    Description: "Key del ZIP de Lambda dentro del bucket."
+
+  DynamoTableName:
+    Type: String
+    Default: tg3-visits-table
+    Description: "Nombre de la tabla DynamoDB."
+
+  FrontendBucketName:
+    Type: String
+    Default: ""
+    Description: >
+      Opcional. Si se deja vacío, CloudFormation generará un nombre.
+      Si se rellena, debe ser único globalmente.
+
+Conditions:
+  UseProvidedFrontendBucketName: !Not [!Equals [!Ref FrontendBucketName, ""]]
+
+Resources:
+  #####################################
+  # DynamoDB
+  #####################################
+  VisitsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref DynamoTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+
+  #####################################
+  # IAM Role for Lambda (mínimo privilegio)
+  #####################################
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: !Sub "${ProjectName}-lambda-ddb-logs"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # DynamoDB mínimo privilegio
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt VisitsTable.Arn
+              # Logs básicos
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  #####################################
+  # Lambda (código desde S3)
+  #####################################
+  VisitsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-visits"
+      Runtime: python3.11
+      Handler: app.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DynamoTableName
+      Code:
+        S3Bucket: !Ref LambdaCodeS3Bucket
+        S3Key: !Ref LambdaCodeS3Key
+
+  #####################################
+  # API Gateway HTTP API + Route /visits
+  #####################################
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${ProjectName}-http-api"
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - OPTIONS
+        AllowHeaders:
+          - "*"
+
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt VisitsFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  ApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /visits"
+      Target: !Sub "integrations/${ApiIntegration}"
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: "$default"
+      AutoDeploy: true
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref VisitsFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*"
+
+  #####################################
+  # S3 Frontend (privado) + CloudFront OAC
+  #####################################
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !If [UseProvidedFrontendBucketName, !Ref FrontendBucketName, !Ref "AWS::NoValue"]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  # OAC para que CloudFront lea del bucket privado
+  FrontendOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${ProjectName}-oac"
+        Description: "OAC for S3 private bucket"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # CloudFront Distribution (sin dominio propio; URL pública)
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "${ProjectName} - static frontend"
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: s3-frontend
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            S3OriginConfig: {}
+            OriginAccessControlId: !Ref FrontendOAC
+        DefaultCacheBehavior:
+          TargetOriginId: s3-frontend
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+
+  # Policy del bucket: permitir lectura SOLO a CloudFront usando OAC
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action:
+              - s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
+Outputs:
+  CloudFrontUrl:
+    Description: "URL pública de CloudFront (sin dominio propio)"
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+
+  CloudFrontDistributionId:
+    Description: "ID de la distribución CloudFront (para invalidaciones)"
+    Value: !Ref CloudFrontDistribution
+
+  FrontendBucketOut:
+    Description: "Bucket S3 del frontend (privado)"
+    Value: !Ref FrontendBucket
+
+  ApiEndpoint:
+    Description: "Endpoint base del HTTP API"
+    Value: !GetAtt HttpApi.ApiEndpoint
+
+  VisitsEndpoint:
+    Description: "Endpoint completo del contador"
+    Value: !Sub "${HttpApi.ApiEndpoint}/visits"
+
+  VisitsTableName:
+    Description: "Tabla DynamoDB del contador"
+    Value: !Ref DynamoTableName
+
+  VisitsFunctionName:
+    Description: "Nombre de la Lambda"
+    Value: !Ref VisitsFunction

@@ -1,0 +1,345 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  TG3 - Pipeline (GitHub -> CodeBuild -> CloudFormation) para desplegar app.yaml.
+  - Fuente: GitHub (vía CodeStar Connection)
+  - Build: empaqueta Lambda a S3 (lambda/lambda.zip) y publica frontend (opcional)
+  - Deploy: CloudFormation create/update stack de la aplicación
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: tg3-visits
+    Description: "Prefijo para nombrar recursos del pipeline."
+
+  ConnectionArn:
+    Type: String
+    Description: "ARN de la CodeStar Connection a GitHub (debes crearla/autorizarla una vez en AWS)."
+
+  GitHubOwner:
+    Type: String
+    Description: "Owner/organización de GitHub. Ej: gtoma"
+
+  GitHubRepo:
+    Type: String
+    Description: "Nombre del repo. Ej: tg3-aws-cloudformation"
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: "Rama a desplegar."
+
+  AppStackName:
+    Type: String
+    Default: tg3-visits-app
+    Description: "Nombre del stack CloudFormation de la aplicación (app.yaml)."
+
+  AppTemplatePath:
+    Type: String
+    Default: infra/cloudformation/app.yaml
+    Description: "Ruta dentro del repo al template principal app.yaml."
+
+  BuildSpecPath:
+    Type: String
+    Default: buildspec.yml
+    Description: "Ruta dentro del repo al buildspec.yml."
+
+  LambdaS3Key:
+    Type: String
+    Default: lambda/lambda.zip
+    Description: "Key destino en S3 para el ZIP de Lambda generado por el build."
+
+  FrontendSyncEnabled:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Si true, el build sincroniza ./frontend/ al bucket creado por app.yaml y hace invalidation CloudFront."
+
+Resources:
+  ############################################################
+  # S3 bucket de artefactos del pipeline
+  ############################################################
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+
+  ArtifactBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "${ArtifactBucket.Arn}"
+              - !Sub "${ArtifactBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  ############################################################
+  # IAM Roles
+  ############################################################
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-codepipeline-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: !Sub "${ProjectName}-codepipeline-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Acceso al bucket de artefactos
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                  - s3:GetBucketVersioning
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "${ArtifactBucket.Arn}"
+                  - !Sub "${ArtifactBucket.Arn}/*"
+
+              # Usar CodeStar Connection (GitHub)
+              - Effect: Allow
+                Action:
+                  - codestar-connections:UseConnection
+                Resource: !Ref ConnectionArn
+
+              # Lanzar builds
+              - Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                Resource: !GetAtt CodeBuildProject.Arn
+
+              # Desplegar con CloudFormation
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:GetTemplateSummary
+                Resource: "*"
+
+              # Pasar el role de ejecución de CloudFormation
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt CloudFormationExecutionRole.Arn
+
+  CloudFormationExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-cfn-exec-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        # Nota: amplio para simplificar práctica. Se puede endurecer después.
+        - PolicyName: !Sub "${ProjectName}-cfn-exec-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-codebuild-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: !Sub "${ProjectName}-codebuild-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+              # S3: artefactos + subir lambda.zip al bucket de artefactos
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "${ArtifactBucket.Arn}"
+                  - !Sub "${ArtifactBucket.Arn}/*"
+
+              # (Opcional) subir frontend al bucket creado por app.yaml:
+              # Permitimos sync a cualquier bucket del account para simplificar.
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: "*"
+
+              # Invalidación CloudFront (opcional)
+              - Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                Resource: "*"
+
+              # Leer outputs del stack para encontrar bucket/distribution (opcional)
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                Resource: "*"
+
+  ############################################################
+  # CodeBuild Project
+  ############################################################
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${ProjectName}-build"
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        EnvironmentVariables:
+          - Name: ARTIFACT_BUCKET
+            Value: !Ref ArtifactBucket
+          - Name: LAMBDA_S3_KEY
+            Value: !Ref LambdaS3Key
+          - Name: APP_STACK_NAME
+            Value: !Ref AppStackName
+          - Name: FRONTEND_SYNC_ENABLED
+            Value: !Ref FrontendSyncEnabled
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Ref BuildSpecPath
+      TimeoutInMinutes: 30
+
+  ############################################################
+  # CodePipeline
+  ############################################################
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub "${ProjectName}-pipeline"
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceFromGitHub
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: "1"
+              OutputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                ConnectionArn: !Ref ConnectionArn
+                FullRepositoryId: !Sub "${GitHubOwner}/${GitHubRepo}"
+                BranchName: !Ref GitHubBranch
+                DetectChanges: true
+              RunOrder: 1
+
+        - Name: Build
+          Actions:
+            - Name: BuildAndPackage
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              RunOrder: 1
+
+        - Name: Deploy
+          Actions:
+            - Name: DeployCloudFormation
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: "1"
+              InputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                StackName: !Ref AppStackName
+                Capabilities: CAPABILITY_NAMED_IAM
+                RoleArn: !GetAtt CloudFormationExecutionRole.Arn
+                TemplatePath: !Sub "SourceOutput::${AppTemplatePath}"
+                # Pasamos a app.yaml dónde está el zip de Lambda (se sube al ArtifactBucket/LAMBDA_S3_KEY en buildspec)
+                ParameterOverrides: !Sub |
+                  {
+                    "ProjectName": "${ProjectName}",
+                    "LambdaCodeS3Bucket": "${ArtifactBucket}",
+                    "LambdaCodeS3Key": "${LambdaS3Key}"
+                  }
+              RunOrder: 1
+
+Outputs:
+  ArtifactBucketName:
+    Description: "Bucket de artefactos del pipeline (también se usa para lambda.zip por defecto)"
+    Value: !Ref ArtifactBucket
+
+  PipelineName:
+    Description: "Nombre del CodePipeline"
+    Value: !Ref Pipeline
+
+  CodeBuildProjectName:
+    Description: "Nombre del proyecto CodeBuild"
+    Value: !Ref CodeBuildProject
