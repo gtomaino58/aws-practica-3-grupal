@@ -2,96 +2,298 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>Contador de visitas - TG3 AWS</title>
+  <title>TG3 AWS — Contador de visitas</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <style>
+    :root {
+      --bg: #0b1220;
+      --card: rgba(255,255,255,0.06);
+      --border: rgba(255,255,255,0.10);
+      --text: rgba(255,255,255,0.92);
+      --muted: rgba(255,255,255,0.70);
+      --accent: #4cc9f0;
+      --ok: #2ecc71;
+      --warn: #f1c40f;
+      --bad: #e74c3c;
+    }
+    * { box-sizing: border-box; }
     body {
-      font-family: Arial, Helvetica, sans-serif;
-      background-color: #f4f6f8;
-      color: #333;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(1200px 800px at 20% 10%, rgba(76,201,240,0.22), transparent 60%),
+                  radial-gradient(900px 600px at 90% 20%, rgba(46,204,113,0.18), transparent 55%),
+                  var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      padding: 24px;
+    }
+    .wrap { width: min(760px, 100%); }
+    .header {
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom: 16px;
+      gap: 12px;
+    }
+    .title {
+      display:flex; flex-direction:column; gap: 4px;
+    }
+    h1 { margin:0; font-size: 20px; letter-spacing: 0.2px; }
+    .subtitle { margin:0; font-size: 13px; color: var(--muted); }
+    .badge {
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.05);
+      border-radius: 999px;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 3px rgba(241,196,15,0.15); }
+    .card {
+      border: 1px solid var(--border);
+      background: var(--card);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+      backdrop-filter: blur(10px);
+    }
+    .grid {
+      display:grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 16px;
+    }
+    @media (max-width: 720px){
+      .grid { grid-template-columns: 1fr; }
+      .badge { justify-content:center; width: 100%; }
+      .header { flex-direction: column; align-items: stretch; }
+    }
+    .metric {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      background: rgba(0,0,0,0.15);
+    }
+    .metric h2 {
+      margin: 0 0 8px 0;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: 0.25px;
+      text-transform: uppercase;
+    }
+    .value {
+      font-size: 56px;
+      line-height: 1;
+      font-weight: 800;
+      color: var(--accent);
+      letter-spacing: -1px;
       margin: 0;
     }
-
-    .card {
-      background: #ffffff;
-      padding: 2rem 3rem;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    .meta {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      display:flex; flex-wrap:wrap; gap: 10px;
+    }
+    .pill {
+      display:inline-flex; gap: 6px; align-items:center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+    }
+    .actions {
+      display:flex; flex-direction:column; gap: 10px;
+    }
+    button {
+      cursor:pointer;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-weight: 600;
+      transition: transform .05s ease, background .2s ease;
+    }
+    button:hover { background: rgba(255,255,255,0.10); }
+    button:active { transform: translateY(1px); }
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px dashed rgba(255,255,255,0.18);
+      background: rgba(0,0,0,0.10);
+    }
+    .err {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(231,76,60,0.35);
+      background: rgba(231,76,60,0.08);
+      color: rgba(255,255,255,0.9);
+      font-size: 12px;
+      display:none;
+      white-space: pre-wrap;
+    }
+    .footer {
+      margin-top: 14px;
+      color: rgba(255,255,255,0.55);
+      font-size: 12px;
       text-align: center;
-      max-width: 400px;
-      width: 100%;
     }
-
-    h1 {
-      margin-top: 0;
-      font-size: 1.6rem;
-    }
-
-    .counter {
-      font-size: 3rem;
-      font-weight: bold;
-      margin: 1.5rem 0;
-      color: #0073bb;
-    }
-
-    .status {
-      font-size: 0.9rem;
-      color: #666;
-    }
+    code { color: rgba(255,255,255,0.9); }
   </style>
 </head>
 
 <body>
-  <div class="card">
-    <h1>👋 Bienvenido a mi sitio Web 👋</h1>
-    <p>Este sitio ha sido visitado por:</p>
-    <div id="counter" class="counter">–</div>
-    <p>personas</p>
-    <div id="status" class="status">Cargando contador...</div>
+  <div class="wrap">
+    <div class="header">
+      <div class="title">
+        <h1>TG3 AWS — Plataforma web segura</h1>
+        <p class="subtitle">S3 privado + CloudFront + API Gateway + Lambda + DynamoDB</p>
+      </div>
+      <div class="badge" title="Estado de la conexión con la API">
+        <span id="dot" class="dot"></span>
+        <span id="statusText">Conectando...</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="grid">
+        <div class="metric">
+          <h2>Visitas registradas</h2>
+          <p id="visits" class="value">—</p>
+
+          <div class="meta">
+            <span class="pill">⏱️ <span id="updatedAt">Sin actualizar</span></span>
+            <span class="pill">🌐 <span id="apiHost">API no configurada</span></span>
+          </div>
+
+          <div id="errorBox" class="err"></div>
+        </div>
+
+        <div class="actions">
+          <button id="refreshBtn" type="button">Actualizar contador</button>
+          <button id="toggleAutoBtn" type="button">Auto-actualización: OFF</button>
+          <div class="hint">
+            Consejo: si actualizas el frontend y no ves cambios, es normal que CloudFront tenga caché.
+            El pipeline invalida CloudFront automáticamente.
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        Acceso por CloudFront · Endpoint backend: <code>/visits</code>
+      </div>
+    </div>
   </div>
 
   <script>
-    // IMPORTANTE:
-    // Sustituye API_BASE_URL por el valor del output "ApiEndpoint"
-    // que devuelve el stack CloudFormation (termina en /)
-    //
-    // Ejemplo:
-    // const API_BASE_URL = "https://abc123.execute-api.eu-west-1.amazonaws.com";
-    //
-    //const API_BASE_URL = "https://q3jein6xqg.execute-api.us-east-1.amazonaws.com";
+    // IMPORTANTE: este valor lo reemplaza el pipeline (buildspec.yml)
     const API_BASE_URL = "REEMPLAZAR_POR_API_ENDPOINT";
 
-    async function loadVisits() {
-      const counterEl = document.getElementById("counter");
-      const statusEl = document.getElementById("status");
+    const visitsEl = document.getElementById("visits");
+    const statusTextEl = document.getElementById("statusText");
+    const dotEl = document.getElementById("dot");
+    const updatedAtEl = document.getElementById("updatedAt");
+    const apiHostEl = document.getElementById("apiHost");
+    const errorBoxEl = document.getElementById("errorBox");
 
-      try {
-        const response = await fetch(`${API_BASE_URL}/visits`, {
-          method: "GET"
-        });
+    const refreshBtn = document.getElementById("refreshBtn");
+    const toggleAutoBtn = document.getElementById("toggleAutoBtn");
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+    let autoTimer = null;
+    let autoOn = false;
 
-        const data = await response.json();
-        counterEl.textContent = data.visits;
-        statusEl.textContent = "Contador actualizado correctamente.";
+    function setStatus(state, text) {
+      statusTextEl.textContent = text;
 
-      } catch (error) {
-        counterEl.textContent = "—";
-        statusEl.textContent = "Error al cargar el contador.";
-        console.error("Error:", error);
+      if (state === "ok") {
+        dotEl.style.background = getComputedStyle(document.documentElement).getPropertyValue("--ok");
+        dotEl.style.boxShadow = "0 0 0 3px rgba(46,204,113,0.15)";
+      } else if (state === "bad") {
+        dotEl.style.background = getComputedStyle(document.documentElement).getPropertyValue("--bad");
+        dotEl.style.boxShadow = "0 0 0 3px rgba(231,76,60,0.15)";
+      } else {
+        dotEl.style.background = getComputedStyle(document.documentElement).getPropertyValue("--warn");
+        dotEl.style.boxShadow = "0 0 0 3px rgba(241,196,15,0.15)";
       }
     }
 
-    // Llamada inicial al cargar la página
-    loadVisits();
+    function showError(msg) {
+      errorBoxEl.style.display = "block";
+      errorBoxEl.textContent = msg;
+    }
+
+    function clearError() {
+      errorBoxEl.style.display = "none";
+      errorBoxEl.textContent = "";
+    }
+
+    function formatTime(d) {
+      return d.toLocaleString("es-ES", { hour12: false });
+    }
+
+    function setApiHost() {
+      try {
+        const url = new URL(API_BASE_URL);
+        apiHostEl.textContent = url.host;
+      } catch {
+        apiHostEl.textContent = "API no configurada";
+      }
+    }
+
+    async function fetchVisits() {
+      clearError();
+      setStatus("warn", "Consultando API...");
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/visits`, { method: "GET" });
+
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`HTTP ${res.status} ${res.statusText}\n${text}`);
+        }
+
+        const data = await res.json();
+        const v = (data && typeof data.visits !== "undefined") ? data.visits : "—";
+
+        visitsEl.textContent = v;
+        updatedAtEl.textContent = formatTime(new Date());
+        setStatus("ok", "Conectado");
+
+      } catch (err) {
+        visitsEl.textContent = "—";
+        setStatus("bad", "Error de conexión");
+        showError(String(err));
+        console.error(err);
+      }
+    }
+
+    function setAuto(on) {
+      autoOn = on;
+      toggleAutoBtn.textContent = `Auto-actualización: ${on ? "ON" : "OFF"}`;
+
+      if (autoTimer) {
+        clearInterval(autoTimer);
+        autoTimer = null;
+      }
+      if (on) {
+        autoTimer = setInterval(fetchVisits, 10000); // cada 10s
+      }
+    }
+
+    refreshBtn.addEventListener("click", fetchVisits);
+    toggleAutoBtn.addEventListener("click", () => setAuto(!autoOn));
+
+    // Init
+    setApiHost();
+    fetchVisits();
   </script>
 </body>
 </html>
