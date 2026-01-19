@@ -124,9 +124,9 @@ Resources:
               # Usar CodeStar Connection (GitHub)
               - Effect: Allow
                 Action:
-                  #- codestar-connections:UseConnection
+                  - codestar-connections:UseConnection
                   - codeconnections:UseConnection
-                Resource: !Ref ConnectionArn
+                Resource: "*" # !Ref ConnectionArn
 
               # Lanzar builds
               - Effect: Allow
