@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: >
   TG3 - Plataforma web segura con contador de visitas (single-region):
   S3 privado + CloudFront (OAC) + API Gateway (HTTP API) + Lambda + DynamoDB.
-  EXT: añade /predict que invoca un endpoint SageMaker.
+  EXT: añade inferencia /predict llamando a SageMaker endpoint.
 
 Parameters:
   ProjectName:
@@ -10,6 +10,7 @@ Parameters:
     Default: tg3-visits
     Description: "Prefijo para nombrar recursos."
 
+  # Bucket donde el pipeline subirá el ZIP de Lambda
   LambdaCodeS3Bucket:
     Type: String
     Description: "Bucket S3 donde se encuentra el ZIP de Lambda (lo subirá CodePipeline/CodeBuild)."
@@ -71,18 +72,18 @@ Resources:
               Service: lambda.amazonaws.com
             Action: "sts:AssumeRole"
       Policies:
-        - PolicyName: !Sub "${ProjectName}-lambda-ddb-sm-logs"
+        - PolicyName: !Sub "${ProjectName}-lambda-ddb-logs"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              # DynamoDB mínimo privilegio (contador)
+              # DynamoDB mínimo privilegio
               - Effect: Allow
                 Action:
                   - dynamodb:GetItem
                   - dynamodb:UpdateItem
                 Resource: !GetAtt VisitsTable.Arn
 
-              # SageMaker InvokeEndpoint (predict)
+              # SageMaker InvokeEndpoint (nuevo)
               - Effect: Allow
                 Action:
                   - sagemaker:InvokeEndpoint
@@ -97,7 +98,7 @@ Resources:
                 Resource: "*"
 
   #####################################
-  # Lambda: contador
+  # Lambda (código desde S3): contador visitas
   #####################################
   VisitsFunction:
     Type: AWS::Lambda::Function
@@ -116,7 +117,7 @@ Resources:
         S3Key: !Ref LambdaCodeS3Key
 
   #####################################
-  # Lambda: predict (nuevo)
+  # Lambda (código desde S3): predict (nuevo)
   #####################################
   PredictFunction:
     Type: AWS::Lambda::Function
@@ -135,7 +136,7 @@ Resources:
         S3Key: !Ref LambdaCodeS3Key
 
   #####################################
-  # API Gateway HTTP API + Routes /visits y /predict
+  # API Gateway HTTP API + Route /visits (existente) + /predict (nuevo)
   #####################################
   HttpApi:
     Type: AWS::ApiGatewayV2::Api
@@ -152,8 +153,8 @@ Resources:
         AllowHeaders:
           - "*"
 
-  # /visits
-  ApiIntegrationVisits:
+  # ---- EXISTENTE: integración y ruta GET /visits ----
+  ApiIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref HttpApi
@@ -161,14 +162,21 @@ Resources:
       IntegrationUri: !GetAtt VisitsFunction.Arn
       PayloadFormatVersion: "2.0"
 
-  ApiRouteVisits:
+  ApiRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref HttpApi
       RouteKey: "GET /visits"
-      Target: !Sub "integrations/${ApiIntegrationVisits}"
+      Target: !Sub "integrations/${ApiIntegration}"
 
-  LambdaInvokePermissionVisits:
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: "$default"
+      AutoDeploy: true
+
+  LambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
       Action: "lambda:InvokeFunction"
@@ -176,7 +184,7 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*"
 
-  # /predict
+  # ---- NUEVO: integración y ruta POST /predict ----
   ApiIntegrationPredict:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
@@ -200,13 +208,6 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*"
 
-  ApiStage:
-    Type: AWS::ApiGatewayV2::Stage
-    Properties:
-      ApiId: !Ref HttpApi
-      StageName: "$default"
-      AutoDeploy: true
-
   #####################################
   # S3 Frontend (privado) + CloudFront OAC
   #####################################
@@ -223,6 +224,7 @@ Resources:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
 
+  # OAC para que CloudFront lea del bucket privado
   FrontendOAC:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
@@ -233,6 +235,7 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
+  # CloudFront Distribution (sin dominio propio; URL pública)
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
     Properties:
@@ -240,22 +243,31 @@ Resources:
         Enabled: true
         Comment: !Sub "${ProjectName} - static frontend"
         DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_100
         Origins:
           - Id: s3-frontend
             DomainName: !GetAtt FrontendBucket.RegionalDomainName
-            OriginAccessControlId: !Ref FrontendOAC
             S3OriginConfig: {}
+            OriginAccessControlId: !Ref FrontendOAC
         DefaultCacheBehavior:
           TargetOriginId: s3-frontend
           ViewerProtocolPolicy: redirect-to-https
-          AllowedMethods: [GET, HEAD, OPTIONS]
-          CachedMethods: [GET, HEAD, OPTIONS]
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
           Compress: true
           ForwardedValues:
             QueryString: false
             Cookies:
               Forward: none
 
+  # Policy del bucket: permitir lectura SOLO a CloudFront usando OAC
   FrontendBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -267,7 +279,8 @@ Resources:
             Effect: Allow
             Principal:
               Service: cloudfront.amazonaws.com
-            Action: [s3:GetObject]
+            Action:
+              - s3:GetObject
             Resource: !Sub "${FrontendBucket.Arn}/*"
             Condition:
               StringEquals:
@@ -303,9 +316,9 @@ Outputs:
     Value: !Ref DynamoTableName
 
   VisitsFunctionName:
-    Description: "Nombre de la Lambda contador"
+    Description: "Nombre de la Lambda (visits)"
     Value: !Ref VisitsFunction
 
   PredictFunctionName:
-    Description: "Nombre de la Lambda predict"
+    Description: "Nombre de la Lambda (predict)"
     Value: !Ref PredictFunction
