@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>TG3 AWS — Web segura con contador</title>
+  <title>TG3 AWS — Web segura con contador + predicción</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <style>
@@ -13,8 +13,8 @@
       --border:rgba(255,255,255,.10);
       --text:rgba(255,255,255,.92);
       --muted:rgba(255,255,255,.70);
-      --brand:#ff9900;   /* AWS-ish */
-      --brand2:#4cc9f0;  /* accent */
+      --brand:#ff9900;
+      --brand2:#4cc9f0;
       --ok:#2ecc71;
       --warn:#f1c40f;
       --bad:#e74c3c;
@@ -38,57 +38,27 @@
     .wrap{width:min(980px,100%)}
     .topbar{
       display:flex; gap:14px; align-items:flex-start; justify-content:space-between;
-      margin-bottom:14px;
-      flex-wrap:wrap;
+      margin-bottom:14px; flex-wrap:wrap;
     }
-    .titlebox{
-      display:flex; flex-direction:column; gap:6px;
-    }
-    .kicker{
-      display:inline-flex; gap:8px; align-items:center;
-      font-size:12px; color:var(--muted);
-    }
-    .kicker .dot{
-      width:8px; height:8px; border-radius:50%;
-      background:var(--brand);
-      box-shadow:0 0 0 3px rgba(255,153,0,.15);
-    }
-    h1{
-      margin:0; font-size:20px; letter-spacing:.2px;
-    }
-    .subtitle{
-      margin:0; font-size:13px; color:var(--muted);
-      line-height:1.35;
-    }
-    .badges{
-      display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end;
-    }
+    .titlebox{display:flex; flex-direction:column; gap:6px;}
+    .kicker{display:inline-flex; gap:8px; align-items:center; font-size:12px; color:var(--muted);}
+    .kicker .dot{width:8px; height:8px; border-radius:50%; background:var(--brand); box-shadow:0 0 0 3px rgba(255,153,0,.15);}
+    h1{margin:0; font-size:20px; letter-spacing:.2px;}
+    .subtitle{margin:0; font-size:13px; color:var(--muted); line-height:1.35;}
+    .badges{display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end;}
     .badge{
       display:inline-flex; align-items:center; gap:8px;
-      padding:8px 12px;
-      border:1px solid var(--border);
+      padding:8px 12px; border:1px solid var(--border);
       background:rgba(255,255,255,.06);
-      border-radius:999px;
-      font-size:12px;
-      color:var(--muted);
-      white-space:nowrap;
+      border-radius:999px; font-size:12px; color:var(--muted); white-space:nowrap;
     }
     .badge strong{color:var(--text); font-weight:700}
     .statusDot{
       width:8px; height:8px; border-radius:50%;
-      background:var(--warn);
-      box-shadow:0 0 0 3px rgba(241,196,15,.15);
+      background:var(--warn); box-shadow:0 0 0 3px rgba(241,196,15,.15);
     }
-
-    .grid{
-      display:grid;
-      grid-template-columns: 1.35fr .65fr;
-      gap:14px;
-    }
-    @media (max-width: 860px){
-      .grid{grid-template-columns:1fr}
-      .badges{justify-content:flex-start}
-    }
+    .grid{display:grid; grid-template-columns: 1.35fr .65fr; gap:14px;}
+    @media (max-width: 860px){ .grid{grid-template-columns:1fr} .badges{justify-content:flex-start} }
 
     .card{
       border:1px solid var(--border);
@@ -105,11 +75,7 @@
       text-transform:uppercase;
       letter-spacing:.25px;
     }
-    .valueRow{
-      display:flex; align-items:baseline; justify-content:space-between;
-      gap:14px;
-      flex-wrap:wrap;
-    }
+    .valueRow{display:flex; align-items:baseline; justify-content:space-between; gap:14px; flex-wrap:wrap;}
     .value{
       font-size:64px;
       font-weight:850;
@@ -118,12 +84,7 @@
       color:var(--brand2);
       line-height:1;
     }
-    .meta{
-      display:flex; gap:10px; flex-wrap:wrap;
-      margin-top:12px;
-      color:var(--muted);
-      font-size:12px;
-    }
+    .meta{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; color:var(--muted); font-size:12px;}
     .pill{
       border:1px solid var(--border);
       background:rgba(255,255,255,.05);
@@ -131,11 +92,8 @@
       border-radius:999px;
       display:inline-flex; align-items:center; gap:8px;
     }
-
     .progress{
-      margin-top:14px;
-      height:10px;
-      border-radius:999px;
+      margin-top:14px; height:10px; border-radius:999px;
       background:rgba(255,255,255,.08);
       overflow:hidden;
       border:1px solid rgba(255,255,255,.08);
@@ -146,10 +104,7 @@
       background:linear-gradient(90deg, rgba(255,153,0,.85), rgba(76,201,240,.85));
       transition: width .4s ease;
     }
-
-    .side{
-      display:flex; flex-direction:column; gap:12px;
-    }
+    .side{display:flex; flex-direction:column; gap:12px;}
     button{
       width:100%;
       cursor:pointer;
@@ -184,13 +139,42 @@
       display:none;
       white-space:pre-wrap;
     }
-    code{color:rgba(255,255,255,.92)}
-    .footer{
-      margin-top:14px;
+    .okBox{
+      margin-top:12px;
+      padding:12px;
+      border-radius:12px;
+      border:1px solid rgba(46,204,113,.35);
+      background:rgba(46,204,113,.10);
+      color:rgba(255,255,255,.92);
       font-size:12px;
-      color:rgba(255,255,255,.55);
-      text-align:center;
+      display:none;
+      white-space:pre-wrap;
     }
+    code{color:rgba(255,255,255,.92)}
+    .footer{margin-top:14px; font-size:12px; color:rgba(255,255,255,.55); text-align:center;}
+
+    .formGrid{
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap:10px;
+      margin-top:10px;
+    }
+    @media (max-width: 640px){
+      .formGrid{grid-template-columns:1fr}
+    }
+    label{font-size:12px; color:var(--muted); display:flex; flex-direction:column; gap:6px;}
+    input{
+      padding:10px 10px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background:rgba(255,255,255,.06);
+      color:var(--text);
+      outline:none;
+    }
+    .btnRow{display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;}
+    .btnRow button{width:auto; flex:1}
+    .bigValue{font-size:34px; font-weight:850; color:var(--brand2); margin:0;}
+    .subValue{font-size:12px; color:var(--muted); margin-top:6px;}
   </style>
 </head>
 
@@ -199,7 +183,7 @@
     <div class="topbar">
       <div class="titlebox">
         <div class="kicker"><span class="dot"></span><span>Arquitecturas Cloud · TG3</span></div>
-        <h1>Web segura serverless con contador de visitas</h1>
+        <h1>Web serverless: contador + inferencia (SageMaker)</h1>
         <p class="subtitle">
           Frontend privado en <strong>S3</strong> servido por <strong>CloudFront</strong>, backend en <strong>API Gateway + Lambda</strong>,
           persistencia en <strong>DynamoDB</strong>, y despliegue automatizado con <strong>CloudFormation + CodePipeline</strong>.
@@ -220,6 +204,7 @@
     </div>
 
     <div class="grid">
+      <!-- Contador -->
       <div class="card">
         <h2>Contador</h2>
 
@@ -238,19 +223,55 @@
         <div id="errorBox" class="err"></div>
       </div>
 
+      <!-- Controles -->
       <div class="side">
         <button id="refreshBtn" type="button">Actualizar contador</button>
         <button id="toggleAutoBtn" type="button">Auto-actualización: OFF</button>
 
         <div class="hint">
           <strong>Nota:</strong> CloudFront cachea contenido. El pipeline invalida automáticamente la distribución tras publicar el frontend.
-          Si haces cambios y no los ves, espera unos segundos o vuelve a cargar.
+          Si haces cambios y no los ves, espera unos segundos o recarga.
         </div>
 
         <div class="hint">
-          <strong>Consejo para la demo:</strong> refresca la página y muestra cómo el contador incrementa en DynamoDB.
+          <strong>Demo:</strong> refresca la página (contador) y luego prueba la inferencia con datos de ejemplo.
         </div>
       </div>
+    </div>
+
+    <!-- Predicción -->
+    <div class="card" style="margin-top:14px;">
+      <h2>Inferencia · Diabetes (Logistic Regression en SageMaker)</h2>
+
+      <div class="valueRow" style="align-items:center;">
+        <div>
+          <p class="bigValue" id="predTitle">—</p>
+          <div class="subValue">Probabilidad estimada (0..1): <strong id="predProb">—</strong></div>
+        </div>
+        <div class="meta">
+          <span class="pill">🧾 Endpoint: <code>/predict</code></span>
+          <span class="pill">📦 Payload: JSON</span>
+        </div>
+      </div>
+
+      <div class="formGrid" aria-label="Formulario de features">
+        <label>Pregnancies <input id="Pregnancies" type="number" value="2"></label>
+        <label>Glucose <input id="Glucose" type="number" value="130"></label>
+        <label>BloodPressure <input id="BloodPressure" type="number" value="70"></label>
+        <label>SkinThickness <input id="SkinThickness" type="number" value="20"></label>
+        <label>Insulin <input id="Insulin" type="number" value="79"></label>
+        <label>BMI <input id="BMI" type="number" step="0.1" value="28.1"></label>
+        <label>DiabetesPedigreeFunction <input id="DiabetesPedigreeFunction" type="number" step="0.001" value="0.35"></label>
+        <label>Age <input id="Age" type="number" value="29"></label>
+      </div>
+
+      <div class="btnRow">
+        <button id="predictBtn" type="button">Predecir</button>
+        <button id="fillExampleBtn" type="button">Cargar ejemplo</button>
+      </div>
+
+      <div id="predictOk" class="okBox"></div>
+      <div id="predictErr" class="err"></div>
     </div>
 
     <div class="footer">
@@ -262,6 +283,7 @@
     // Este valor lo reemplaza automáticamente el pipeline (buildspec.yml)
     const API_BASE_URL = "REEMPLAZAR_POR_API_ENDPOINT";
 
+    // Contador
     const visitsEl = document.getElementById("visits");
     const updatedAtEl = document.getElementById("updatedAt");
     const apiHostEl = document.getElementById("apiHost");
@@ -271,6 +293,16 @@
     const errorBoxEl = document.getElementById("errorBox");
     const refreshBtn = document.getElementById("refreshBtn");
     const toggleAutoBtn = document.getElementById("toggleAutoBtn");
+
+    // Predicción
+    const predictBtn = document.getElementById("predictBtn");
+    const fillExampleBtn = document.getElementById("fillExampleBtn");
+    const predTitleEl = document.getElementById("predTitle");
+    const predProbEl = document.getElementById("predProb");
+    const predictOkEl = document.getElementById("predictOk");
+    const predictErrEl = document.getElementById("predictErr");
+
+    const fields = ["Pregnancies","Glucose","BloodPressure","SkinThickness","Insulin","BMI","DiabetesPedigreeFunction","Age"];
 
     let autoOn = false;
     let autoTimer = null;
@@ -309,7 +341,6 @@
       }
     }
     function setBar(v){
-      // Progreso visual (solo estético). Normaliza al rango [0..100] con un módulo.
       const pct = Math.min(100, (Number(v) % 100));
       barEl.style.width = `${pct}%`;
     }
@@ -320,12 +351,10 @@
 
       try{
         const res = await fetch(`${API_BASE_URL}/visits`, { method: "GET" });
-
         if (!res.ok){
           const t = await res.text().catch(() => "");
           throw new Error(`HTTP ${res.status} ${res.statusText}\n${t}`);
         }
-
         const data = await res.json();
         const v = (data && typeof data.visits !== "undefined") ? data.visits : "—";
 
@@ -333,7 +362,6 @@
         updatedAtEl.textContent = fmt(new Date());
         setBar(v);
         setStatus("ok", "Conectado");
-
       } catch (e){
         visitsEl.textContent = "—";
         setStatus("bad", "Error");
@@ -345,22 +373,81 @@
     function setAuto(on){
       autoOn = on;
       toggleAutoBtn.textContent = `Auto-actualización: ${on ? "ON" : "OFF"}`;
+      if (autoTimer){ clearInterval(autoTimer); autoTimer = null; }
+      if (on){ autoTimer = setInterval(fetchVisits, 10000); }
+    }
 
-      if (autoTimer){
-        clearInterval(autoTimer);
-        autoTimer = null;
-      }
-      if (on){
-        autoTimer = setInterval(fetchVisits, 10000); // cada 10 segundos
+    function hidePredictBoxes(){
+      predictOkEl.style.display = "none";
+      predictOkEl.textContent = "";
+      predictErrEl.style.display = "none";
+      predictErrEl.textContent = "";
+    }
+
+    function fillExample(){
+      const sample = {
+        "Pregnancies": 6,
+        "Glucose": 148,
+        "BloodPressure": 72,
+        "SkinThickness": 35,
+        "Insulin": 0,
+        "BMI": 33.6,
+        "DiabetesPedigreeFunction": 0.627,
+        "Age": 50
+      };
+      fields.forEach(k => document.getElementById(k).value = sample[k]);
+    }
+
+    async function predict(){
+      hidePredictBoxes();
+      predTitleEl.textContent = "Calculando…";
+      predProbEl.textContent = "—";
+
+      const payload = {};
+      fields.forEach(k => payload[k] = Number(document.getElementById(k).value));
+
+      try{
+        const res = await fetch(`${API_BASE_URL}/predict`, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify(payload)
+        });
+
+        const text = await res.text();
+        let data = {};
+        try { data = JSON.parse(text); } catch { data = { raw: text }; }
+
+        if (!res.ok){
+          throw new Error(`HTTP ${res.status} ${res.statusText}\n${text}`);
+        }
+
+        const prob = (typeof data.probability === "number") ? data.probability : null;
+        const pred = (typeof data.prediction !== "undefined") ? data.prediction : null;
+
+        predTitleEl.textContent = (pred === 1) ? "Resultado: POSITIVO (1)" : "Resultado: NEGATIVO (0)";
+        predProbEl.textContent = (prob !== null) ? prob.toFixed(4) : "—";
+
+        predictOkEl.style.display = "block";
+        predictOkEl.textContent = JSON.stringify(data, null, 2);
+
+      } catch (e){
+        predTitleEl.textContent = "Error en predicción";
+        predictErrEl.style.display = "block";
+        predictErrEl.textContent = String(e);
+        console.error(e);
       }
     }
 
     refreshBtn.addEventListener("click", fetchVisits);
     toggleAutoBtn.addEventListener("click", () => setAuto(!autoOn));
 
+    predictBtn.addEventListener("click", predict);
+    fillExampleBtn.addEventListener("click", () => { fillExample(); });
+
     // init
     setApiHost();
     fetchVisits();
+    fillExample();
   </script>
 </body>
 </html>
