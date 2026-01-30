@@ -372,7 +372,7 @@
 
     function setAuto(on){
       autoOn = on;
-      toggleAutoBtn.textContent = `AUTO-ACTUALIZACION: ${on ? "ON" : "OFF"}`;
+      toggleAutoBtn.textContent = `Auto-Actulizacion: ${on ? "ON" : "OFF"}`;
       if (autoTimer){ clearInterval(autoTimer); autoTimer = null; }
       if (on){ autoTimer = setInterval(fetchVisits, 10000); }
     }
