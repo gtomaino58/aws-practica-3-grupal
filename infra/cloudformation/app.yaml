@@ -100,7 +100,7 @@ Resources:
   #####################################
   # Lambda (código desde S3): contador visitas
   #####################################
-  VisitsFunction:
+  VisitsFunctionV2:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${ProjectName}-visits"
@@ -159,7 +159,7 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: !GetAtt VisitsFunction.Arn
+      IntegrationUri: !GetAtt VisitsFunctionV2.Arn
       PayloadFormatVersion: "2.0"
 
   ApiRoute:
@@ -180,7 +180,7 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       Action: "lambda:InvokeFunction"
-      FunctionName: !Ref VisitsFunction
+      FunctionName: !Ref VisitsFunctionV2
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*"
 
@@ -317,7 +317,7 @@ Outputs:
 
   VisitsFunctionName:
     Description: "Nombre de la Lambda (visits)"
-    Value: !Ref VisitsFunction
+    Value: !Ref VisitsFunctionV2
 
   PredictFunctionName:
     Description: "Nombre de la Lambda (predict)"
