@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>TG3 aws — Web Segura con Contador + Predicción</title>
+  <title>TG3 AWS — Web Segura con Contador + Predicción</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <style>
@@ -372,7 +372,7 @@
 
     function setAuto(on){
       autoOn = on;
-      toggleAutoBtn.textContent = `Auto-actualización: ${on ? "ON" : "OFF"}`;
+      toggleAutoBtn.textContent = `AUTO-ACTUALIZACION: ${on ? "ON" : "OFF"}`;
       if (autoTimer){ clearInterval(autoTimer); autoTimer = null; }
       if (on){ autoTimer = setInterval(fetchVisits, 10000); }
     }
