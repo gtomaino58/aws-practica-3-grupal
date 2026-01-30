@@ -103,7 +103,7 @@ Resources:
   VisitsFunctionV2:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${ProjectName}-visits"
+      #FunctionName: !Sub "${ProjectName}-visits"
       Runtime: python3.11
       Handler: app.handler
       Role: !GetAtt LambdaExecutionRole.Arn
