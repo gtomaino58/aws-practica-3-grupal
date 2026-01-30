@@ -8,7 +8,7 @@ Description: >
 Parameters:
   ProjectName:
     Type: String
-    Default: tg3-visits
+    Default: tg3-visitsXXX
     Description: "Prefijo para nombrar recursos del pipeline."
 
   ConnectionArn:
