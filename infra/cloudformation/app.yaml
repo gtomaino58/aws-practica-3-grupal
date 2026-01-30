@@ -45,7 +45,7 @@ Resources:
   # DynamoDB
   #####################################
   VisitsTable:
-    Type: AWS::DynamoDB::TableXXX
+    Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Ref DynamoTableName
       BillingMode: PAY_PER_REQUEST
